@@ -1,89 +1,74 @@
 local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = game:GetService("Players").LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
 
-local function showNotification(msg, duration)
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.DisplayOrder = 999
-    screenGui.IgnoreGuiInset = true
-    
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, 0, 0, 120)
-    textLabel.Position = UDim2.new(0, 0, 0, 0)
-    textLabel.BackgroundColor3 = Color3.new(0, 0, 0)
-    textLabel.BackgroundTransparency = 0.2
-    textLabel.TextColor3 = Color3.new(1, 1, 1)
-    textLabel.TextSize = 22
-    textLabel.Font = Enum.Font.SourceSans
-    textLabel.TextWrapped = true
-    textLabel.TextScaled = false
-    textLabel.Text = msg
-    textLabel.Parent = screenGui
-    
-    screenGui.Parent = PlayerGui
-    
-    task.delay(duration, function()
-        screenGui:Destroy()
-    end)
+local LocalPlayer = Players.LocalPlayer
+
+StarterGui:SetCore("SendNotification", {
+    Title = "Controller Support Added",
+    Text = "R2: Shoot\nL2: Reload ('R' Key)\nButton B: Crouch\nButton X: Sprint (Toggle)",
+    Duration = 5
+})
+
+local function safe_call(fn, ...)
+    if type(fn) ~= "function" then return end
+    pcall(fn, ...)
 end
 
-showNotification("Controller Map Loaded:\nR2: Shoot (Left Click)\nL2: 'R' Key\nButton B: 'C' Key\nButton X: Toggle Speed", 10)
+local do_press, do_release, do_kpress, do_krelease = function() end, function() end, function() end, function() end
 
-local do_press_func = mouse1press
-local do_release_func = mouse1release
-if syn and syn.mouse_event then
-    do_press_func = function() syn.mouse_event(0x0002) end
-    do_release_func = function() syn.mouse_event(0x0004) end
+if type(syn) == "table" then
+    if type(syn.mouse_event) == "function" then
+        do_press = function() safe_call(syn.mouse_event, 0x0002) end
+        do_release = function() safe_call(syn.mouse_event, 0x0004) end
+    end
+    if type(syn.keyboard_event) == "function" then
+        do_kpress = function(vk) safe_call(syn.keyboard_event, vk, true) end
+        do_krelease = function(vk) safe_call(syn.keyboard_event, vk, false) end
+    end
 end
 
-local do_keypress_func = keypress
-local do_keyrelease_func = keyrelease
-if syn and syn.keyboard_event then
-    do_keypress_func = function(vk) syn.keyboard_event(vk, true) end
-    do_keyrelease_func = function(vk) syn.keyboard_event(vk, false) end
+if type(mouse1press) == "function" and type(mouse1release) == "function" then
+    do_press, do_release = mouse1press, mouse1release
 end
 
-local VK_R = 0x52
-local VK_C = 0x43
-
-if not (do_press_func and do_release_func) then
+if type(keypress) == "function" and type(keyrelease) == "function" then
+    do_kpress, do_krelease = keypress, keyrelease
 end
 
-if not (do_keypress_func and do_keyrelease_func) then
-    return
+local VK_R, VK_C = 0x52, 0x43
+local WALK_SPEED, SPRINT_SPEED = 16, 24
+local isSprint = false
+
+local function getHumanoid()
+    local char = LocalPlayer and LocalPlayer.Character
+    return char and char:FindFirstChildOfClass("Humanoid")
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessedEvent)
-    local key = input.KeyCode
-
-    if key == Enum.KeyCode.ButtonR2 then
-        if do_press_func then do_press_func() end
-    
-    elseif key == Enum.KeyCode.ButtonL2 then
-        if do_keypress_func then do_keypress_func(VK_R) end
-
-    elseif key == Enum.KeyCode.ButtonB then
-        if do_keypress_func then do_keypress_func(VK_C) end
-
-    elseif key == Enum.KeyCode.ButtonX then
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.WalkSpeed = (hum.WalkSpeed == 16 and 24) or 16
-        end
+    if gameProcessedEvent then return end
+    local k = input.KeyCode
+    if k == Enum.KeyCode.ButtonR2 then
+        safe_call(do_press)
+    elseif k == Enum.KeyCode.ButtonL2 then
+        safe_call(do_kpress, VK_R)
+    elseif k == Enum.KeyCode.ButtonB then
+        safe_call(do_kpress, VK_C)
+    elseif k == Enum.KeyCode.ButtonX then
+        isSprint = not isSprint
+        local hum = getHumanoid()
+        if hum then hum.WalkSpeed = (isSprint and SPRINT_SPEED) or WALK_SPEED end
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-    local key = input.KeyCode
-
-    if key == Enum.KeyCode.ButtonR2 then
-        if do_release_func then do_release_func() end
-
-    elseif key == Enum.KeyCode.ButtonL2 then
-        if do_keyrelease_func then do_keyrelease_func(VK_R) end
-
-    elseif key == Enum.KeyCode.ButtonB then
-        if do_keyrelease_func then do_keyrelease_func(VK_C) end
+UserInputService.InputEnded:Connect(function(input, gameProcessedEvent)
+    if gameProcessedEvent then return end
+    local k = input.KeyCode
+    if k == Enum.KeyCode.ButtonR2 then
+        safe_call(do_release)
+    elseif k == Enum.KeyCode.ButtonL2 then
+        safe_call(do_krelease, VK_R)
+    elseif k == Enum.KeyCode.ButtonB then
+        safe_call(do_krelease, VK_C)
     end
 end)
