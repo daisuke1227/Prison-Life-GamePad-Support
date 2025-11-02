@@ -1,3 +1,5 @@
+-- hey Aesthetical this is for you theres a lot of players like me that wanna use a controller and you removed it so hard yesterday I spent a good 10-15 minutes making a gamepad support script but you BROKE IT with the backpack and I just wanna tell you that please add Controller support it will be so amazing please and thank you this code was vibecoded and it may be the messiest code on earth but if I some stupid vibecoder can do it you can to and i dont even have the source of the game so please add it this took me literal hours to fix and get everything correct :3
+
 local Players = game:GetService("Players")
 repeat task.wait() Players = game:GetService("Players") until Players
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
