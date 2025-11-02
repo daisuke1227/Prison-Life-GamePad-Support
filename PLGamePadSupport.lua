@@ -8,15 +8,100 @@ local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
 local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then LocalPlayer = Players.PlayerAdded:Wait() end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
+task.spawn(function()
+	local success, err = pcall(function()
+		-- IMPORTANT: You must upload the new UI script to a new pastebin and put the RAW URL here
+		loadstring(game:HttpGet("https://pastebin.com/raw/dtJLzaDD", true))()
+	end)
+	if not success then
+		warn("Keybind UI failed to load: " .. tostring(err))
+	end
+end)
+
+local function LoadConfig()
+	if not readfile or not isfile("ControllerConfig.json") then
+		warn("readfile is not available or config file does not exist.")
+		return nil
+	end
+
+	local settings = nil
+	local success, err = pcall(function()
+		local fileContent = readfile("ControllerConfig.json")
+		local decodedSettings = HttpService:JSONDecode(fileContent)
+		
+		if decodedSettings and decodedSettings.Keybinds then
+			settings = { Keybinds = {} }
+			
+			for key, keyName in pairs(decodedSettings.Keybinds) do
+				if Enum.KeyCode[keyName] then
+					settings.Keybinds[key] = Enum.KeyCode[keyName]
+				else
+					warn("Invalid keyName in config:", keyName)
+				end
+			end
+		else
+			warn("Config file is empty or corrupted.")
+		end
+	end)
+	
+	if success and settings then
+		return settings
+	else
+		warn("Failed to load config: " .. tostring(err))
+		return nil
+	end
+end
+
+if not _G.Settings then
+	_G.Settings = LoadConfig()
+end
+
+if not _G.Settings or not _G.Settings.Keybinds then
+	_G.Settings = {
+		Keybinds = {
+			MenuToggle = Enum.KeyCode.ButtonY,
+			Sprint = Enum.KeyCode.ButtonX,
+			Crouch = Enum.KeyCode.ButtonB,
+			Reload = Enum.KeyCode.ButtonL2
+		}
+	}
+end
+_G.isListeningForKey = nil
+
+_G.SaveConfig = function()
+	if not writefile then 
+		warn("writefile is not available in this environment.")
+		return 
+	end
+	
+	pcall(function()
+		local settingsToSave = {
+			Keybinds = {}
+		}
+		
+		for key, value in pairs(_G.Settings.Keybinds) do
+			if value and value.Name then
+				settingsToSave.Keybinds[key] = value.Name
+			end
+		end
+		
+		local jsonSettings = HttpService:JSONEncode(settingsToSave)
+		
+		writefile("ControllerConfig.json", jsonSettings)
+	end)
+end
+
+
 StarterGui:SetCore("SendNotification", {
 	Title = "Controller Support",
-	Text = "R1/L1: Cycle Tool\nR2: Shoot\nL2: Reload ('R' Key)\nButton B: Crouch\nButton X: Sprint (Toggle)",
+	Text = "R1/L1: Cycle Tool\nR2: Shoot\nL2: Reload\nButton B: Crouch\nButton X: Sprint\nButton Y: Toggle Menu",
 	Duration = 7
 })
 
@@ -399,10 +484,57 @@ LocalPlayer.CharacterAdded:Connect(setupCharacter)
 if LocalPlayer.Character then setupCharacter(LocalPlayer.Character) end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
+	if _G.isListeningForKey then
+		local key = input.KeyCode
+		local inputType = input.UserInputType
+
+		local isKeyboard = (inputType == Enum.UserInputType.Keyboard)
+		local isGamepad = (inputType == Enum.UserInputType.Gamepad1 or
+						   inputType == Enum.UserInputType.Gamepad2 or
+						   inputType == Enum.UserInputType.Gamepad3 or
+						   inputType == Enum.UserInputType.Gamepad4)
+
+		if isKeyboard or isGamepad then
+			if key == Enum.KeyCode.Unknown then 
+				_G.isListeningForKey = nil
+				if _G.updateMenuUI then _G.updateMenuUI() end
+				return true 
+			end
+			
+			local success, keyName = pcall(function() return key.Name end)
+			if not success or not keyName or keyName == "Unknown" then
+				_G.isListeningForKey = nil
+				if _G.updateMenuUI then _G.updateMenuUI() end
+				return true
+			end
+
+			_G.Settings.Keybinds[_G.isListeningForKey] = key
+			_G.isListeningForKey = nil
+			if _G.updateMenuUI then _G.updateMenuUI() end
+			return true
+		else
+			return false
+		end
+	end
+
 	local k = input.KeyCode
 	local inputType = input.UserInputType
-	if k == Enum.KeyCode.ButtonR2 or inputType == Enum.UserInputType.MouseButton1 or inputType == Enum.UserInputType.Touch then
+
+	if k == _G.Settings.Keybinds.MenuToggle then
+		if _G.KeybindMenu then
+			_G.KeybindMenu.Visible = not _G.KeybindMenu.Visible
+			if _G.KeybindMenu.Visible then
+				_G.selectedMenuItemIndex = 1
+				if _G.updateMenuUI then _G.updateMenuUI() end
+			end
+		end
+		return
+	end
+	
+	if _G.handleMenuNavigation and _G.handleMenuNavigation(input) then return end
+	if gameProcessed then return end
+if k == Enum.KeyCode.ButtonR2 then
+	
 		local isController = k == Enum.KeyCode.ButtonR2
 		local isMouse = inputType == Enum.UserInputType.MouseButton1
 		local isTouch = inputType == Enum.UserInputType.Touch
@@ -431,15 +563,15 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 				end
 			end
 		end
-	elseif k == Enum.KeyCode.ButtonL2 or k == Enum.KeyCode.R then
+	elseif k == _G.Settings.Keybinds.Reload or k == Enum.KeyCode.R then
 		safe_call(do_kpress, VK_R)
 	elseif k == Enum.KeyCode.ButtonR1 then
 		Backpack_cycleTool(1)
 	elseif k == Enum.KeyCode.ButtonL1 then
 		Backpack_cycleTool(-1)
-	elseif k == Enum.KeyCode.ButtonB then
+	elseif k == _G.Settings.Keybinds.Crouch then
 		safe_call(do_kpress, VK_C)
-	elseif k == Enum.KeyCode.ButtonX then
+	elseif k == _G.Settings.Keybinds.Sprint then
 		isSprint = not isSprint
 		local hum = getHumanoid()
 		if hum then hum.WalkSpeed = (isSprint and SPRINT_SPEED) or WALK_SPEED end
@@ -449,17 +581,21 @@ end)
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	local k = input.KeyCode
-	if k == Enum.KeyCode.ButtonR2 or input.UserInputType == Enum.UserInputType.Touch then
+	if k == Enum.KeyCode.ButtonR2 then
 		if isShielding then
 			isShielding = false
 			if equipShieldRemote and typeof(equipShieldRemote.FireServer) == "function" then pcall(function() equipShieldRemote:FireServer(false) end) end
 		else
 			isShooting = false
 		end
-	elseif k == Enum.KeyCode.ButtonL2 or k == Enum.KeyCode.R then
+	elseif k == _G.Settings.Keybinds.Reload or k == Enum.KeyCode.R then
 		safe_call(do_krelease, VK_R)
-	elseif k == Enum.KeyCode.ButtonB then
+	elseif k == _G.Settings.Keybinds.Crouch then
 		safe_call(do_krelease, VK_C)
+		local hum = getHumanoid()
+		if hum then
+			hum.WalkSpeed = (isSprint and SPRINT_SPEED) or WALK_SPEED
+		end
 	end
 end)
 
